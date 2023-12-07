@@ -28,18 +28,9 @@ export class ParserService {
     const changes: Changes[] = [];
     const parsedData: ParsedData = this.parseData(inputString);
 
-    this.logger.log('parsedData');
-    this.logger.debug(parsedData);
-
     changes.push(...this.cryptData(parsedData));
 
-    this.logger.log('changes');
-    this.logger.debug(changes);
-
     const changedString: string = this.hideSensitiveData(inputString, changes);
-
-    this.logger.log('changedString');
-    this.logger.debug(changedString);
 
     /**
      * Place for request to AI
@@ -50,8 +41,6 @@ export class ParserService {
       changedString, // TODO: Replace with a response
       changes,
     );
-    this.logger.log('restoredResponse');
-    this.logger.debug(restoredResponse);
 
     return restoredResponse;
   }
