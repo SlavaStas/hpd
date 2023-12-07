@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { faker } from '@faker-js/faker';
 import * as compromise from 'compromise';
-import * as ibanTools from 'ibantools';
 
 type Changes = {
   origin: string;
@@ -9,13 +8,10 @@ type Changes = {
 };
 
 type ParsedData = {
+  sixDigits?: string[];
   emailAddresses?: string[];
-  phoneNumbers?: string[];
-  passportNumbers?: string[];
   ipAddresses?: string[];
-  iban?: string[];
   names?: string[];
-  creditCardNumbers?: string[];
 };
 
 @Injectable()
@@ -46,19 +42,36 @@ export class ParserService {
     this.logger.debug(changedString);
 
     /**
-     * Place for request to third service
-     * response =
+     * Place for request to AI
+     * const response =
      */
 
-    const restoredResponse: string = this.restoreResponse(inputString, changes);
+    const restoredResponse: string = this.restoreResponse(
+      changedString, // TODO: Replace with a response
+      changes,
+    );
     this.logger.log('restoredResponse');
     this.logger.debug(restoredResponse);
 
     return restoredResponse;
   }
 
+  public findSixDigitSequence(text: string): string[] {
+    const regex = /(\d\s*-?\s*){6}/g;
+
+    const txt: string = text.replace(/[()]/g, ' ');
+    const matches = txt.match(regex);
+    return matches || [];
+  }
+
   public parseData(inputString: string): ParsedData {
     const parsedData: ParsedData = {};
+
+    // Six Digits
+    const sixDigits: string[] = this.findSixDigitSequence(inputString);
+    if (sixDigits) {
+      parsedData.sixDigits = sixDigits;
+    }
 
     // Email addresses
     const parsedEmail: string[] = this.parseEmailAddresses(inputString);
@@ -72,35 +85,10 @@ export class ParserService {
       parsedData.ipAddresses = parsedIp;
     }
 
-    // Credit cards
-    const parsedCreditCard: string[] = this.parseCreditCard(inputString);
-    if (parsedCreditCard) {
-      parsedData.creditCardNumbers = parsedCreditCard;
-    }
-
-    // IBAN
-    const parsedIBAN: string[] = this.parseIBAN(inputString);
-    if (parsedIBAN) {
-      parsedData.iban = parsedIBAN;
-    }
-
     // Parse Names
     const parsedNames: string[] = this.parseNames(inputString);
     if (parsedNames) {
       parsedData.names = parsedNames;
-    }
-
-    // Parse Passport Numbers
-    const parsedPassportNumbers: string[] =
-      this.parsePassportNumbers(inputString);
-    if (parsedPassportNumbers) {
-      parsedData.passportNumbers = parsedPassportNumbers;
-    }
-
-    // Phone numbers
-    const numbers: string[] = this.parsePhoneNumber(inputString);
-    if (numbers) {
-      parsedData.phoneNumbers = numbers;
     }
 
     return parsedData;
@@ -147,11 +135,6 @@ export class ParserService {
     targetWord: string,
     replacement: string,
   ): string {
-    this.logger.debug(originalString);
-    this.logger.log('targetWord');
-    this.logger.log(targetWord);
-    this.logger.log('replacement');
-    this.logger.log(replacement);
     const regex = new RegExp(targetWord, 'gi');
     return originalString.replace(regex, replacement);
   }
@@ -159,22 +142,30 @@ export class ParserService {
   public cryptData(data: ParsedData): Changes[] {
     const cryptData: Changes[] = [];
 
-    cryptData.push(...this.cryptEmails(data.emailAddresses));
-    cryptData.push(...this.cryptIpAddresses(data.ipAddresses));
-    cryptData.push(...this.cryptIban(data.iban));
-    cryptData.push(...this.cryptCardNumbers(data.creditCardNumbers));
-    cryptData.push(...this.cryptNames(data.names));
-    cryptData.push(...this.cryptPassportNumbers(data.passportNumbers));
-    cryptData.push(...this.cryptPhoneNumbers(data.phoneNumbers));
+    if (data.sixDigits) {
+      cryptData.push(...this.cryptCodes(data.sixDigits));
+    }
+
+    if (data.emailAddresses) {
+      cryptData.push(...this.cryptEmails(data.emailAddresses));
+    }
+
+    if (data.ipAddresses) {
+      cryptData.push(...this.cryptIpAddresses(data.ipAddresses));
+    }
+
+    if (data.names) {
+      cryptData.push(...this.cryptNames(data.names));
+    }
 
     return cryptData;
   }
 
-  public cryptPassportNumbers(passportNumbers: string[]): Changes[] {
-    return passportNumbers.map((number: string): Changes => {
+  public cryptCodes(codes: string[]): Changes[] {
+    return codes.map((code: string): Changes => {
       return {
-        origin: number,
-        fake: faker.string.alphanumeric(9).toUpperCase(),
+        origin: code,
+        fake: this.generateRandomString(6, 'numbers'),
       };
     });
   }
@@ -224,63 +215,6 @@ export class ParserService {
     });
   }
 
-  public cryptIban(ibans: string[]): Changes[] {
-    return ibans.map((iban: string): Changes => {
-      return {
-        origin: iban,
-        fake: this.generateRandomString(iban.length, 'mixed'),
-      };
-    });
-  }
-
-  public cryptCardNumbers(cardNumbers: string[]): Changes[] {
-    return cardNumbers.map((number: string): Changes => {
-      if (number.includes('-')) {
-        return {
-          origin: number,
-          fake: `${this.generateRandomString(
-            4,
-            'numbers',
-          )}-${this.generateRandomString(
-            4,
-            'numbers',
-          )}-${this.generateRandomString(
-            4,
-            'numbers',
-          )}-${this.generateRandomString(4, 'numbers')}`,
-        };
-      } else {
-        return {
-          origin: number,
-          fake: this.generateRandomString(number.length, 'numbers'),
-        };
-      }
-    });
-  }
-
-  public cryptPhoneNumbers(phoneNumbers: string[]): Changes[] {
-    return phoneNumbers.map((number: string): Changes => {
-      return {
-        origin: number,
-        fake: this.generateRandomPhoneNumber(),
-      };
-    });
-  }
-
-  public generateRandomPhoneNumber(): string {
-    const countryCode = Math.floor(Math.random() * (999 - 1) + 1)
-      .toString()
-      .padStart(3, '0');
-    const operatorCode = Math.floor(Math.random() * (999 - 1) + 1)
-      .toString()
-      .padStart(3, '0');
-    const phoneNumber = Math.floor(Math.random() * (9999999 - 1) + 1)
-      .toString()
-      .padStart(7, '0');
-
-    return `${countryCode} (${operatorCode}) ${phoneNumber}`;
-  }
-
   public generateRandomString(
     length: number,
     type: 'numbers' | 'letters' | 'mixed',
@@ -304,32 +238,6 @@ export class ParserService {
     return doc.people().out('array') as string[];
   }
 
-  public parsePassportNumbers(input: string): string[] {
-    const parsedPassports: string[] = [];
-    const passportRegexps: RegExp[] = [
-      // /\b[A-Za-z]{1,2}\s?\d{6,8}\s?[A-Za-z]{0,2}\b(?!\s)/g, // Common passport formats
-      /\b[E|G]\d{8}\b/g, // Chinese passports
-      /\b[A-Z]{1,3}\d{7}\b/g, // Indian passports
-      /\b\d{2}\s?\d{2}\s?\d{6}\b/g, // Russian passports
-      /\b(?:DE|FRAB|ITA|ESPA|NL|BE|AT|GRAB|PT|DK|SE|FI|IE|LU|MTAB)\d{8,11}[A-Za-z]?\b/g, // ES passports
-      /\b[A-Z]\d{9}\b/g, // American passports,
-      /\b[A-Z]{2}\s?\d{6}\b/g, // Ukraine passports
-    ];
-
-    passportRegexps.forEach((regex: RegExp) => {
-      this.logger.log(regex);
-      const parsed = input.match(regex);
-      this.logger.log(parsed);
-      if (parsed) {
-        parsedPassports.push(...parsed);
-      }
-
-      return [...new Set(parsed)];
-    });
-
-    return parsedPassports;
-  }
-
   public parseIpAddress(input: string): string[] {
     const ipRegex = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
 
@@ -341,28 +249,5 @@ export class ParserService {
       /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
     return input.match(emailAddressesRegexp) || [];
-  }
-
-  public parsePhoneNumber(input: string): string[] {
-    const phoneNumberRegex =
-      /(\d{1,2}\s?)?(\(\d{1,4}\)|\d{1,4})[-\s]?(\d{1,4}[-\s]?\d{1,9})/g;
-    return (
-      input
-        .match(phoneNumberRegex)
-        .filter((number: string): boolean => number.length >= 10) || []
-    );
-  }
-
-  public parseCreditCard(input: string): string[] {
-    const creditCardRegex = /\b(?:\d[ -]*?){13,16}\b/g;
-
-    return input.match(creditCardRegex) || [];
-  }
-
-  public parseIBAN(input: string): string[] {
-    const ibanRegex =
-      /\b[A-Z]{2}\d{2}(?:\s?\d{4}){3}\d{4}|\b[A-Z]{2}\d{2}\d{16}\b/g;
-
-    return input.match(ibanRegex) || [];
   }
 }
